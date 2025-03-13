@@ -1,0 +1,18 @@
+{
+  "name": "helicopter-game",
+  "module": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build src/game.ts --outdir=dist --target browser"
+  },
+  "devDependencies": {
+    "bun-types": "latest"
+  },
+  "dependencies": {
+    "three": "^0.162.0",
+    "matter-js": "^0.19.0",
+    "@types/three": "^0.162.0",
+    "@types/matter-js": "^0.19.6"
+  }
+}
