@@ -13,17 +13,20 @@ export class Rope {
     private ropeGroup: THREE.Group;
     private length: number = 0;
     private targetLength: number = 0;
+    private lastDebugTime: number = 0;
+    private readonly DEBUG_INTERVAL = 1000; // 1 second in milliseconds
 
-    // Adjusted constants
-    private readonly MIN_LENGTH = 0.1;     // Shorter minimum
-    private readonly MAX_LENGTH = 3;       // Shorter maximum
-    private readonly SEGMENT_COUNT = 15;   // More segments
+    // Adjusted constants for debugging
+    private readonly MIN_LENGTH = 0.1;     // Absolute minimum length
+    private readonly MAX_LENGTH = 3;       // Maximum total length
+    private readonly SEGMENT_COUNT = 6;   
     private readonly EXTEND_SPEED = 0.06;
     private readonly GRAVITY = 0.012;
     private readonly DAMPING = 0.98;
     private readonly HOOK_SIZE = 0.15;
-    private readonly SEGMENT_RADIUS = 0.03; // Rope thickness
+    private readonly SEGMENT_RADIUS = 0.02; // Thinner rope for testing
     private readonly PARENT_VELOCITY_INFLUENCE = 0.005;
+    private readonly BASE_SEGMENT_LENGTH = 0.1; // Base length for cylinder geometry
 
     constructor(scene: THREE.Scene, anchorPoint: THREE.Vector3) {
         this.ropeGroup = new THREE.Group();
@@ -31,12 +34,16 @@ export class Rope {
 
         // Initialize segments with meshes
         this.segments = [];
+        // Create a SHORT cylinder for the base geometry
         const segmentGeometry = new THREE.CylinderGeometry(
-            this.SEGMENT_RADIUS, 
-            this.SEGMENT_RADIUS, 
-            0.1,  // Initial length, will be updated
-            6     // Hexagonal cross-section
+            this.SEGMENT_RADIUS,    // top radius
+            this.SEGMENT_RADIUS,    // bottom radius
+            1,                      // height of 1 unit (will be scaled)
+            6                       // hexagonal cross-section
         );
+        // Rotate cylinder to lay flat along local Y axis
+        segmentGeometry.rotateX(Math.PI / 2);
+        
         const segmentMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x303030,
             roughness: 0.7,
@@ -45,6 +52,8 @@ export class Rope {
 
         for (let i = 0; i < this.SEGMENT_COUNT; i++) {
             const mesh = new THREE.Mesh(segmentGeometry, segmentMaterial);
+            // Start with minimal scale
+            mesh.scale.set(1, 0.01, 1);
             this.ropeGroup.add(mesh);
 
             this.segments.push({
@@ -93,6 +102,7 @@ export class Rope {
 
         // Calculate segment length based on total rope length
         const segmentLength = this.length / (this.SEGMENT_COUNT - 1);
+        // console.log('Individual segment length:', segmentLength);
 
         // Update physics for other segments
         for (let i = 1; i < this.segments.length; i++) {
@@ -144,17 +154,31 @@ export class Rope {
             const direction = nextSegment.position.clone().sub(segment.position);
             const segmentDist = direction.length();
             
-            // Update segment mesh
-            segment.mesh.position.copy(segment.position);
-            
-            // Point cylinder to next segment
             if (segmentDist > 0) {
-                segment.mesh.lookAt(nextSegment.position);
-                segment.mesh.rotateX(Math.PI / 2);
+                // Position segment at midpoint between points
+                segment.mesh.position.copy(segment.position);
+                segment.mesh.position.lerp(nextSegment.position, 0.5);
                 
-                // Update cylinder height to match distance
+                // Orient segment to point to next segment
+                segment.mesh.lookAt(nextSegment.position);
+                
+                // Scale the segment length (using scale.y because we rotated the geometry)
                 segment.mesh.scale.y = segmentDist;
             }
+        }
+
+        // Debug logging
+        const currentTime = Date.now();
+        if (currentTime - this.lastDebugTime > this.DEBUG_INTERVAL) {
+            const firstSegDist = this.segments[0].position.distanceTo(this.segments[1].position);
+            console.log('Rope Debug:', {
+                targetLength: this.targetLength.toFixed(3),
+                currentLength: this.length.toFixed(3),
+                segmentCount: this.SEGMENT_COUNT,
+                calculatedSegLength: (this.length / (this.SEGMENT_COUNT - 1)).toFixed(3),
+                actualFirstSegLength: firstSegDist.toFixed(3)
+            });
+            this.lastDebugTime = currentTime;
         }
 
         // Update hook
@@ -171,16 +195,38 @@ export class Rope {
     }
 
     public extend() {
-        this.targetLength = Math.min(
+        const newTargetLength = Math.min(
             this.targetLength + this.EXTEND_SPEED,
             this.MAX_LENGTH
         );
+        
+        // Log only when length changes
+        if (newTargetLength !== this.targetLength) {
+            console.log('Extending rope:', {
+                previousTarget: this.targetLength.toFixed(3),
+                newTarget: newTargetLength.toFixed(3),
+                maxLength: this.MAX_LENGTH
+            });
+        }
+        
+        this.targetLength = newTargetLength;
     }
 
     public retract() {
-        this.targetLength = Math.max(
+        const newTargetLength = Math.max(
             this.targetLength - this.EXTEND_SPEED,
             this.MIN_LENGTH
         );
+        
+        // Log only when length changes
+        if (newTargetLength !== this.targetLength) {
+            console.log('Retracting rope:', {
+                previousTarget: this.targetLength.toFixed(3),
+                newTarget: newTargetLength.toFixed(3),
+                minLength: this.MIN_LENGTH
+            });
+        }
+        
+        this.targetLength = newTargetLength;
     }
 } 

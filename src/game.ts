@@ -191,7 +191,7 @@ export class Game {
         this.camera.position.x += (targetX - this.camera.position.x) * 0.1;
 
         // Debug: log active controls
-        this.debugControls();
+        // this.debugControls();
 
         // Render scene
         this.renderer.render(this.scene, this.camera);
