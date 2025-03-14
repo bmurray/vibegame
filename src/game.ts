@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Level } from './Level';
+import { Helicopter } from './entities/Helicopter';
 
 export interface Controls {
     up: boolean;
@@ -44,6 +45,9 @@ export class Game {
         space: false
     };
 
+    private helicopter: Helicopter;
+    private clock: THREE.Clock;
+
     constructor() {
         // Create scene
         this.scene = new THREE.Scene();
@@ -69,6 +73,9 @@ export class Game {
         // Create level
         this.level = new Level();
         this.scene.add(this.level.scene);
+
+        this.clock = new THREE.Clock();
+        this.helicopter = new Helicopter(this.scene);
 
         this.setupControls();
         this.animate();
@@ -173,6 +180,15 @@ export class Game {
 
     private animate() {
         requestAnimationFrame(() => this.animate());
+
+        const deltaTime = this.clock.getDelta();
+
+        // Update helicopter
+        this.helicopter.update(this.controls, deltaTime);
+
+        // Update camera to follow helicopter
+        const targetX = this.helicopter.mesh.position.x;
+        this.camera.position.x += (targetX - this.camera.position.x) * 0.1;
 
         // Debug: log active controls
         this.debugControls();
