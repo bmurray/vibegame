@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Controls } from '../game';
 import { Rope } from './Rope';
+import { LayerManager } from '../managers/LayerManager';
 
 export class Helicopter {
     public mesh: THREE.Group;
@@ -24,7 +25,6 @@ export class Helicopter {
     private readonly HORIZONTAL_DAMPING = 0.98;
     private readonly VERTICAL_DAMPING = 0.85;      // Increased damping for stability
     private readonly HEIGHT_CHANGE_SPEED = 0.15;
-    private readonly GROUND_LEVEL = -2;           // Match with Level's ground Y
     private readonly MIN_HEIGHT = 0.5;            // Minimum height above ground
     private time: number = 0;
 
@@ -32,6 +32,8 @@ export class Helicopter {
     private readonly MAX_ROLL_ANGLE = 0.3;  // About 17 degrees
     private readonly ROLL_RESPONSE = 15;     // How quickly the helicopter rolls
     private currentRoll: number = 0;
+
+    private raycaster: THREE.Raycaster;
 
     constructor(scene: THREE.Scene) {
         this.mesh = new THREE.Group();
@@ -50,7 +52,9 @@ export class Helicopter {
         const rightAnchor = new THREE.Vector3(this.ROPE_OFFSET, 0, 0);
         this.leftRope = new Rope(scene, leftAnchor);
         this.rightRope = new Rope(scene, rightAnchor);
-        this.leftRope.debug = true;
+
+        this.raycaster = new THREE.Raycaster();
+        this.raycaster.layers.enable(LayerManager.GROUND_LAYER);
     }
 
     private createHelicopter() {
@@ -116,14 +120,14 @@ export class Helicopter {
             this.targetHeight += this.HEIGHT_CHANGE_SPEED;
         } else if (controls.down) {
             // Only allow going down if above minimum height
-            if (this.targetHeight > this.GROUND_LEVEL + this.MIN_HEIGHT) {
+            if (this.targetHeight > this.MIN_HEIGHT) {
                 this.targetHeight -= this.HEIGHT_CHANGE_SPEED;
             }
         }
 
         // Ensure target height doesn't go below ground
         this.targetHeight = Math.max(
-            this.GROUND_LEVEL + this.MIN_HEIGHT, 
+            this.MIN_HEIGHT, 
             this.targetHeight
         );
 
@@ -153,11 +157,27 @@ export class Helicopter {
         // Update position
         const nextY = this.mesh.position.y + this.velocity.y;
         
-        // Ground collision check
-        if (nextY <= this.GROUND_LEVEL + this.MIN_HEIGHT) {
-            this.mesh.position.y = this.GROUND_LEVEL + this.MIN_HEIGHT;
+        // Ground collision check using raycaster
+        this.raycaster.ray.origin.copy(this.mesh.position);
+        this.raycaster.ray.origin.y += 2; // Start from above the helicopter
+        this.raycaster.ray.direction.set(0, -1, 0);
+
+        const groundMeshes = LayerManager.getInstance().getInPlaneMeshes();
+        let groundHeight = this.MIN_HEIGHT;
+
+        for (const ground of groundMeshes) {
+            const intersects = this.raycaster.intersectObject(ground, false);
+            if (intersects.length > 0) {
+                // Update ground height to the highest point of intersection
+                groundHeight = Math.max(groundHeight, intersects[0].point.y);
+            }
+        }
+
+        // Apply collision response
+        if (nextY <= groundHeight + this.MIN_HEIGHT) {
+            this.mesh.position.y = groundHeight + this.MIN_HEIGHT;
             this.velocity.y = 0;
-            this.targetHeight = this.GROUND_LEVEL + this.MIN_HEIGHT;
+            this.targetHeight = groundHeight + this.MIN_HEIGHT;
         } else {
             this.mesh.position.y = nextY;
         }
@@ -231,5 +251,23 @@ export class Helicopter {
     // Add method to get current target height (useful for debugging)
     public getTargetHeight(): number {
         return this.targetHeight;
+    }
+
+    private getGroundHeightAt(position: THREE.Vector3): number {
+        this.raycaster.ray.origin.copy(position);
+        this.raycaster.ray.origin.y += 2;
+        this.raycaster.ray.direction.set(0, -1, 0);
+
+        let groundHeight = -Infinity;
+        const groundMeshes = LayerManager.getInstance().getInPlaneMeshes();
+        
+        for (const ground of groundMeshes) {
+            const intersects = this.raycaster.intersectObject(ground, false);
+            if (intersects.length > 0) {
+                groundHeight = Math.max(groundHeight, intersects[0].point.y);
+            }
+        }
+
+        return groundHeight;
     }
 } 

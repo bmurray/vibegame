@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { LayerManager, CollisionLayer } from '../managers/LayerManager';
 
 interface RopeSegment {
     mesh: THREE.Mesh;
@@ -22,12 +23,19 @@ export class Rope {
     private readonly MAX_LENGTH = 3;       // Maximum total length
     private readonly SEGMENT_COUNT = 15;   
     private readonly EXTEND_SPEED = 0.06;
-    private readonly GRAVITY = 0.012;
+    private readonly GRAVITY = 0.008;           // Reduced gravity
     private readonly DAMPING = 0.98;
     private readonly HOOK_SIZE = 0.15;
     private readonly SEGMENT_RADIUS = 0.02; // Thinner rope for testing
     private readonly PARENT_VELOCITY_INFLUENCE = 0.005;
     private readonly BASE_SEGMENT_LENGTH = 0.1; // Base length for cylinder geometry
+    private readonly HOOK_MASS = 0.5;           // Reduced hook mass
+    private readonly CONSTRAINT_ITERATIONS = 20; // Many more iterations for very stiff rope
+    private readonly TENSION_STIFFNESS = 1.0;   // Maximum stiffness
+    private readonly HOOK_MOMENTUM_TRANSFER = 0.05; // Reduced momentum transfer
+    private readonly BOUNCE_FACTOR = 0.3;   
+    private readonly FRICTION = 0.8;        
+    private raycaster: THREE.Raycaster;
 
     constructor(scene: THREE.Scene, anchorPoint: THREE.Vector3) {
         this.ropeGroup = new THREE.Group();
@@ -82,6 +90,12 @@ export class Rope {
         // Start with minimum length
         this.length = this.MIN_LENGTH;
         this.targetLength = this.MIN_LENGTH;
+        this.raycaster = new THREE.Raycaster();
+        // Enable all in-plane collision layers
+        this.raycaster.layers.enable(CollisionLayer.GROUND);
+        this.raycaster.layers.enable(CollisionLayer.WALLS);
+        this.raycaster.layers.enable(CollisionLayer.OBSTACLES);
+        this.raycaster.layers.enable(CollisionLayer.PLATFORMS);
     }
 
     public update(anchorPoint: THREE.Vector3, parentVelocity: THREE.Vector3) {
@@ -103,29 +117,57 @@ export class Rope {
 
         // Calculate segment length based on total rope length
         const segmentLength = this.length / (this.SEGMENT_COUNT - 1);
-        if (this.debug) {
-            console.log('Individual segment length:', this.length, segmentLength);
-        }
+        // if (this.debug) {
+        //     console.log('Individual segment length:', this.length, segmentLength);
+        // }
 
-        // Update physics for other segments
+        // Update physics for segments
         for (let i = 1; i < this.segments.length; i++) {
             const segment = this.segments[i];
             
             segment.prevPosition.copy(segment.position);
-            segment.velocity.y -= this.GRAVITY;
             
+            // Apply forces
             if (i === this.segments.length - 1) {
+                segment.velocity.y -= this.GRAVITY * this.HOOK_MASS;
                 segment.velocity.add(
-                    parentVelocity.clone().multiplyScalar(this.PARENT_VELOCITY_INFLUENCE)
+                    parentVelocity.clone().multiplyScalar(this.HOOK_MOMENTUM_TRANSFER)
                 );
+
+                // Ground collision detection using raycaster
+                this.raycaster.ray.origin.copy(segment.position);
+                this.raycaster.ray.origin.y += 0.1;
+                this.raycaster.ray.direction.set(0, -1, 0);
+
+                // Check collision with all in-plane meshes
+                const collidableMeshes = LayerManager.getInstance().getInPlaneMeshes();
+                for (const mesh of collidableMeshes) {
+                    const intersects = this.raycaster.intersectObject(mesh, false);
+                    if (intersects.length > 0) {
+                        const hitPoint = intersects[0].point;
+                        const distance = segment.position.y - hitPoint.y;
+                        
+                        if (distance < 0.1) {
+                            segment.position.y = hitPoint.y + 0.1;
+                            if (segment.velocity.y < 0) {
+                                segment.velocity.y = -segment.velocity.y * this.BOUNCE_FACTOR;
+                                segment.velocity.x *= this.FRICTION;
+                                segment.velocity.z *= this.FRICTION;
+                            }
+                            break; // Exit loop after handling first collision
+                        }
+                    }
+                }
+            } else {
+                segment.velocity.y -= this.GRAVITY;
             }
             
             segment.position.add(segment.velocity);
             segment.velocity.multiplyScalar(this.DAMPING);
         }
 
-        // Solve distance constraints
-        for (let j = 0; j < 3; j++) {
+        // Many more iterations for very stiff rope
+        for (let j = 0; j < this.CONSTRAINT_ITERATIONS; j++) {
             for (let i = 0; i < this.segments.length - 1; i++) {
                 const segmentA = this.segments[i];
                 const segmentB = this.segments[i + 1];
@@ -134,15 +176,16 @@ export class Rope {
                 const currentDist = diff.length();
                 
                 if (currentDist > 0) {
+                    const targetDist = this.length / (this.SEGMENT_COUNT - 1);
                     const correction = diff.multiplyScalar(
-                        (currentDist - segmentLength) / currentDist * 0.5
+                        (currentDist - targetDist) / currentDist
                     );
                     
                     if (i > 0) {
-                        segmentA.position.add(correction);
                         segmentB.position.sub(correction);
                     } else {
-                        segmentB.position.sub(correction.multiplyScalar(2));
+                        // First segment anchored
+                        segmentB.position.sub(correction);
                     }
                 }
             }
@@ -174,7 +217,7 @@ export class Rope {
         const currentTime = Date.now();
         if (this.debug && currentTime - this.lastDebugTime > this.DEBUG_INTERVAL) {
             const firstSegDist = this.segments[0].position.distanceTo(this.segments[1].position);
-            console.log('Rope Debug:', {
+            console.log({
                 targetLength: this.targetLength.toFixed(3),
                 currentLength: this.length.toFixed(3),
                 segmentCount: this.SEGMENT_COUNT,
@@ -222,7 +265,7 @@ export class Rope {
         );
         
         // Log only when length changes
-        if (newTargetLength !== this.targetLength) {
+        if (this.debug && newTargetLength !== this.targetLength) {
             console.log('Retracting rope:', {
                 previousTarget: this.targetLength.toFixed(3),
                 newTarget: newTargetLength.toFixed(3),
