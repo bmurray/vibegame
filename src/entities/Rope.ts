@@ -8,6 +8,7 @@ interface RopeSegment {
 }
 
 export class Rope {
+    public debug: boolean = false;
     private segments: RopeSegment[];
     private hook: THREE.Mesh;
     private ropeGroup: THREE.Group;
@@ -19,7 +20,7 @@ export class Rope {
     // Adjusted constants for debugging
     private readonly MIN_LENGTH = 0.1;     // Absolute minimum length
     private readonly MAX_LENGTH = 3;       // Maximum total length
-    private readonly SEGMENT_COUNT = 6;   
+    private readonly SEGMENT_COUNT = 15;   
     private readonly EXTEND_SPEED = 0.06;
     private readonly GRAVITY = 0.012;
     private readonly DAMPING = 0.98;
@@ -102,7 +103,9 @@ export class Rope {
 
         // Calculate segment length based on total rope length
         const segmentLength = this.length / (this.SEGMENT_COUNT - 1);
-        // console.log('Individual segment length:', segmentLength);
+        if (this.debug) {
+            console.log('Individual segment length:', this.length, segmentLength);
+        }
 
         // Update physics for other segments
         for (let i = 1; i < this.segments.length; i++) {
@@ -169,7 +172,7 @@ export class Rope {
 
         // Debug logging
         const currentTime = Date.now();
-        if (currentTime - this.lastDebugTime > this.DEBUG_INTERVAL) {
+        if (this.debug && currentTime - this.lastDebugTime > this.DEBUG_INTERVAL) {
             const firstSegDist = this.segments[0].position.distanceTo(this.segments[1].position);
             console.log('Rope Debug:', {
                 targetLength: this.targetLength.toFixed(3),

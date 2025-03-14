@@ -50,6 +50,7 @@ export class Helicopter {
         const rightAnchor = new THREE.Vector3(this.ROPE_OFFSET, 0, 0);
         this.leftRope = new Rope(scene, leftAnchor);
         this.rightRope = new Rope(scene, rightAnchor);
+        this.leftRope.debug = true;
     }
 
     private createHelicopter() {
