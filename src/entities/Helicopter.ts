@@ -24,6 +24,11 @@ export class Helicopter {
     private readonly MIN_HEIGHT = 0.5;            // Minimum height above ground
     private time: number = 0;
 
+    // Add roll constants
+    private readonly MAX_ROLL_ANGLE = 0.3;  // About 17 degrees
+    private readonly ROLL_RESPONSE = 15;     // How quickly the helicopter rolls
+    private currentRoll: number = 0;
+
     constructor(scene: THREE.Scene) {
         this.mesh = new THREE.Group();
         this.velocity = new THREE.Vector3();
@@ -75,16 +80,20 @@ export class Helicopter {
     public update(controls: Controls, deltaTime: number) {
         this.time += deltaTime;
 
-        // Calculate hover offset (reduced effect)
+        // Store previous velocity for acceleration calculation
+        const previousVelocityX = this.velocity.x;
+
+        // Calculate hover offset
         const hoverOffset = Math.sin(this.time * this.HOVER_SPEED) * this.HOVER_VARIANCE;
 
-        // Handle controls
+        // Handle controls and set acceleration
         if (controls.left) {
             this.acceleration.x = -this.HORIZONTAL_ACCELERATION;
         } else if (controls.right) {
             this.acceleration.x = this.HORIZONTAL_ACCELERATION;
         } else {
-            this.acceleration.x = 0;
+            // When no input, acceleration opposes current velocity for deceleration
+            this.acceleration.x = -this.velocity.x * 0.1;
         }
 
         // Update target height based on vertical controls
@@ -141,19 +150,34 @@ export class Helicopter {
         // Update horizontal position
         this.mesh.position.x += this.velocity.x;
 
+        // Calculate actual acceleration (change in velocity)
+        const actualAcceleration = this.velocity.x - previousVelocityX;
+
+        // Calculate target roll based on acceleration
+        const targetRoll = -actualAcceleration * this.ROLL_RESPONSE;
+
+        // Clamp target roll to maximum angles
+        const clampedTargetRoll = THREE.MathUtils.clamp(
+            targetRoll,
+            -this.MAX_ROLL_ANGLE,
+            this.MAX_ROLL_ANGLE
+        );
+
+        // Smoothly interpolate current roll to target roll
+        this.currentRoll = THREE.MathUtils.lerp(
+            this.currentRoll,
+            clampedTargetRoll,
+            0.15
+        );
+
+        // Apply roll to helicopter
+        this.mesh.rotation.z = this.currentRoll;
+
         // Rotate main rotor
         this.rotorAngle += 0.3;
         this.rotorMesh.rotation.y = this.rotorAngle;
 
-        // Tilt helicopter based on movement
-        const targetTilt = this.velocity.x * 0.8;
-        this.mesh.rotation.z = THREE.MathUtils.lerp(
-            this.mesh.rotation.z,
-            -targetTilt,
-            0.1
-        );
-
-        // Add slight upward tilt when rising, downward when descending
+        // Update vertical tilt
         const verticalTilt = this.velocity.y * 0.2;
         this.mesh.rotation.x = THREE.MathUtils.lerp(
             this.mesh.rotation.x,
