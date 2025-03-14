@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Controls } from '../game';
+import { Rope } from './Rope';
 
 export class Helicopter {
     public mesh: THREE.Group;
@@ -8,6 +9,9 @@ export class Helicopter {
     private rotorMesh: THREE.Mesh;
     private rotorAngle: number = 0;
     private targetHeight: number;
+    private leftRope: Rope;
+    private rightRope: Rope;
+    private readonly ROPE_OFFSET = 1; // Distance from center for rope attachment
 
     // Adjusted physics constants
     private readonly INITIAL_HEIGHT = 5;
@@ -40,6 +44,12 @@ export class Helicopter {
 
         // Set initial position
         this.mesh.position.set(0, this.INITIAL_HEIGHT, 0);
+
+        // Create ropes
+        const leftAnchor = new THREE.Vector3(-this.ROPE_OFFSET, 0, 0);
+        const rightAnchor = new THREE.Vector3(this.ROPE_OFFSET, 0, 0);
+        this.leftRope = new Rope(scene, leftAnchor);
+        this.rightRope = new Rope(scene, rightAnchor);
     }
 
     private createHelicopter() {
@@ -78,6 +88,10 @@ export class Helicopter {
     }
 
     public update(controls: Controls, deltaTime: number) {
+        // Store helicopter velocity for rope physics
+        const helicopterVelocity = this.velocity.clone();
+
+        // Normal helicopter update
         this.time += deltaTime;
 
         // Store previous velocity for acceleration calculation
@@ -184,6 +198,33 @@ export class Helicopter {
             verticalTilt,
             0.1
         );
+
+        // Update rope anchor points (after helicopter position is updated)
+        const leftAnchorWorld = new THREE.Vector3();
+        const rightAnchorWorld = new THREE.Vector3();
+        
+        // Calculate anchor points in world space
+        leftAnchorWorld.copy(new THREE.Vector3(-this.ROPE_OFFSET, 0, 0))
+            .applyMatrix4(this.mesh.matrixWorld);
+        rightAnchorWorld.copy(new THREE.Vector3(this.ROPE_OFFSET, 0, 0))
+            .applyMatrix4(this.mesh.matrixWorld);
+
+        // Handle rope controls independently of helicopter movement
+        if (controls.q) {
+            this.leftRope.retract();
+        } else if (controls.a) {
+            this.leftRope.extend();
+        }
+
+        if (controls.e) {
+            this.rightRope.retract();
+        } else if (controls.d) {
+            this.rightRope.extend();
+        }
+
+        // Update ropes with helicopter's velocity
+        this.leftRope.update(leftAnchorWorld, helicopterVelocity);
+        this.rightRope.update(rightAnchorWorld, helicopterVelocity);
     }
 
     // Add method to get current target height (useful for debugging)
